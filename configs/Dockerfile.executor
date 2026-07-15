@@ -1,0 +1,59 @@
+# Agor Executor Container
+# Hardened container for running Codex CLI with Ollama-backed local models
+# Base: Node.js 22 slim for minimal attack surface
+FROM node:22-slim
+
+LABEL maintainer="agor-workflow"
+LABEL description="Isolated executor for Agor unattended testing workflow"
+LABEL version="1.0.0"
+
+# Security: Remove SUID binaries to prevent privilege escalation
+RUN find / -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true
+
+# Install runtime dependencies in a single layer
+# Tools needed: git, python3 (test runners), make/g++ (native builds), jq (JSON parsing)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    python3 \
+    python3-pip \
+    make \
+    g++ \
+    gcc \
+    jq \
+    curl \
+    ca-certificates \
+    bash \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Install Codex CLI globally
+RUN npm install -g @openai/codex@latest
+
+# Security: Create non-root user (uid 1000)
+RUN groupadd --gid 1000 codex && \
+    useradd --uid 1000 --gid codex --shell /bin/bash \
+    --create-home --home-dir /home/codex codex
+
+# Working directory — only the ticket worktree is mounted here
+WORKDIR /workspace
+
+# Security: No secrets baked into the image — all injected at runtime via tmpfs
+
+# Ollama client configuration — points to host Ollama server
+ENV OLLAMA_HOST=http://host.docker.internal:11434
+ENV OLLAMA_API_KEY=""
+
+# Git isolation — no hooks, no credential helpers, no system config
+ENV GIT_CONFIG_NOSYSTEM=1
+ENV GIT_CONFIG_GLOBAL=/dev/null
+ENV HOME=/tmp
+
+# Security: Run as non-root user
+USER codex
+
+# Health check — verify Codex CLI is available
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD codex --version || exit 1
+
+# Default: show help (container is launched with specific command by container-launcher.sh)
+CMD ["codex", "--help"]
