@@ -1,0 +1,112 @@
+# Agor Orchestrator Configuration
+# Place at ~/.agor/config.yaml
+#
+# Agor is a self-hosted workspace for orchestrating AI coding agents.
+# This config sets up strict isolation mode for unattended testing workflows.
+#
+# Docs: https://agor.live/guide/configuration
+
+# =============================================================================
+# Core Settings
+# =============================================================================
+
+# Daemon HTTP port (default: 3030)
+daemon:
+  port: 3030
+  host: 127.0.0.1  # Bind to localhost only — no remote access
+
+# Database: SQLite (simple) or PostgreSQL (production)
+database:
+  driver: libsql  # Options: libsql, postgres
+  url: "file:~/.agor/agor.db"  # SQLite file path
+
+# Security mode: simple | insulated | strict
+#   simple:     Basic isolation, single-user
+#   insulated:  Branch-scoped permissions, RBAC
+#   strict:     Full sandboxing, audit logging, code review required
+security:
+  mode: strict
+  headers:
+    # Content Security Policy
+    content_security_policy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    # CORS — restrict to same origin
+    access_control_allow_origin: "http://localhost:5173"
+
+# =============================================================================
+# Logging
+# =============================================================================
+
+logging:
+  level: info  # debug | info | warn | error
+  format: json
+  destination: file
+  path: ~/.agor/logs/agor.log
+  max_size_mb: 100
+  max_files: 7  # Keep one week of logs
+
+# =============================================================================
+# Agent Registry
+# =============================================================================
+# Register the local model providers for the executor
+
+agents:
+  # Primary model: Devstral 24B — complex implementation tasks
+  - name: devstral-executor
+    type: codex
+    model: devstral:24b
+    provider: ollama
+    base_url: http://localhost:11434/v1
+    profile: unattended
+    description: "Complex code implementation — auto-selected for multi-step tasks"
+
+  # Fast model: DeepSeek-Coder-V2-Lite 16B — quick fixes
+  - name: lite-executor
+    type: codex
+    model: deepseek-coder-v2-lite:16b
+    provider: ollama
+    base_url: http://localhost:11434/v1
+    profile: fast
+    description: "Quick fixes and simple changes — auto-selected for ≤3 steps"
+
+  # Cloud planner: Claude Opus — plan generation only (no code execution)
+  - name: opus-planner
+    type: cloud
+    model: claude-opus-4-20250514
+    provider: anthropic
+    description: "Cloud planner for execution plan generation"
+    # IMPORTANT: Never send code to cloud planner — ticket content only
+
+# =============================================================================
+# Git Integration
+# =============================================================================
+
+git:
+  default_branch: main
+  require_signed_commits: false
+  worktree_root: /var/repos  # Where isolated worktrees are created
+
+# =============================================================================
+# Review & Governance
+# =============================================================================
+
+# Human review is ALWAYS required before merge — this is non-negotiable
+governance:
+  require_human_review: true
+  auto_merge: false  # NEVER enable for unattended workflows
+  auto_deploy: false  # NEVER enable for unattended workflows
+  max_retries: 2  # Per-check retry limit
+  max_autonomous_repair: 2  # Global retry limit before human intervention
+
+# =============================================================================
+# Webhooks (Optional)
+# =============================================================================
+# Uncomment to enable automatic ticket ingestion
+
+# webhooks:
+#   jira:
+#     url: https://your-domain.atlassian.net/rest/api/2/issue
+#     auth: ${JIRA_API_TOKEN}
+#     project_key: PROJ
+#   github:
+#     secret: ${GITHUB_WEBHOOK_SECRET}
+#     events: [issues, pull_request]

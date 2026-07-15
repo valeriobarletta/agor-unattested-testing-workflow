@@ -1,0 +1,221 @@
+# Security Policy for Agor Unattended Testing Workflow
+# 
+# Defines what the Codex executor is allowed to do:
+# which files it can touch, which commands it can run,
+# which models it can use, and what resources it can consume.
+#
+# The policy engine validates every execution plan against these rules.
+# Violations cause immediate rejection.
+
+name: codex-executor-security-policy
+version: "2.0"
+description: Security policy for unattended code execution with Ollama dual-model
+
+# =============================================================================
+# Filesystem Restrictions
+# =============================================================================
+
+allowed_paths:
+  - /workspace/src        # Source code
+  - /workspace/tests      # Test files
+  - /workspace/docs       # Documentation
+  - /workspace/public     # Static assets
+  - /workspace/lib        # Library code
+  - /workspace/app        # Application code
+  - /workspace/packages   # Monorepo packages
+
+forbidden_paths:
+  - /workspace/.github         # CI/CD configs
+  - /workspace/infra           # Infrastructure
+  - /workspace/secrets         # Secret files
+  - /workspace/.env            # Environment files
+  - /workspace/.env.*          # All env files
+  - /workspace/deploy          # Deployment scripts
+  - /workspace/scripts         # Build scripts
+  - /workspace/.ssh            # SSH keys
+  - /workspace/.aws            # AWS credentials
+  - /workspace/.docker         # Docker configs
+  - /workspace/.npmrc          # NPM auth
+  - /workspace/.pypirc         # PyPI auth
+  - /workspace/Dockerfile*     # Docker files
+  - /workspace/docker-compose* # Compose files
+  - /workspace/k8s             # Kubernetes manifests
+  - /workspace/terraform       # Terraform configs
+
+limits:
+  max_files_per_plan: 20           # Max files a plan can modify
+  max_lines_per_file: 500          # Max lines per file change
+  max_total_lines: 2000            # Max total lines changed
+
+# =============================================================================
+# Command Restrictions
+# =============================================================================
+
+allowed_commands:
+  # Package managers
+  - npm
+  - npx
+  - yarn
+  - pnpm
+  - pip
+  - pip3
+  - poetry
+  - cargo
+  # Runtimes
+  - node
+  - python
+  - python3
+  - rustc
+  # Git
+  - git
+  # Utilities (safe)
+  - cat
+  - grep
+  - find
+  - ls
+  - pwd
+  - echo
+  - mkdir
+  - cp
+  - mv
+  - rm
+  - touch
+  - head
+  - tail
+  - wc
+  - sort
+  - uniq
+  - diff
+  - patch
+  # Formatters / Linters
+  - eslint
+  - prettier
+  - biome
+  - black
+  - ruff
+  - flake8
+  - mypy
+  - pyright
+  - cargo-fmt
+  - cargo-clippy
+  # Test runners
+  - jest
+  - vitest
+  - mocha
+  - pytest
+  - playwright
+  - cypress
+
+forbidden_commands:
+  # Network tools
+  - curl
+  - wget
+  - nc
+  - netcat
+  - ssh
+  - scp
+  - sftp
+  - telnet
+  - nmap
+  - ping
+  - traceroute
+  - dig
+  - nslookup
+  # Privilege escalation
+  - sudo
+  - su
+  - pkexec
+  - doas
+  - chmod
+  - chown
+  # Dangerous
+  - eval
+  - exec
+  - source
+  - bash
+  - sh
+  - zsh
+  - .
+  # Container / orchestration
+  - docker
+  - kubectl
+  - helm
+  - minikube
+  - kind
+  # Data exfiltration
+  - ncat
+  - socat
+  - tcpdump
+  - wireshark
+  - tshark
+  # Encoding (potential obfuscation)
+  - base64
+  - xxd
+  - od
+  - hexdump
+  - uuencode
+
+# =============================================================================
+# Model Restrictions
+# =============================================================================
+
+# Only these Ollama models are permitted for unattended execution
+allowed_models:
+  - devstral:24b                   # Primary: complex implementation
+  - deepseek-coder-v2-lite:16b     # Fast: quick fixes
+
+# Models explicitly forbidden (e.g., if a proxy provides access)
+forbidden_models:
+  - gpt-5                         # Never use cloud models for unattended execution
+  - claude-opus                   # Cloud planner only, never executor
+
+# =============================================================================
+# Network Restrictions
+# =============================================================================
+
+network_access: false  # Default: no network for executor
+
+# If network is needed (e.g., for npm install), these domains are allowed
+allowed_domains:
+  - registry.npmjs.org
+  - registry.yarnpkg.com
+  - pypi.org
+  - files.pythonhosted.org
+  - crates.io
+
+# =============================================================================
+# Dependency Restrictions
+# =============================================================================
+
+# Pre-approved dependencies (can be added without human review)
+pre_approved_dependencies: []
+
+# New dependencies require human approval
+require_approval_for_new_deps: true
+
+# =============================================================================
+# Resource Limits
+# =============================================================================
+
+resources:
+  max_execution_time_seconds: 600   # 10 minutes max per session
+  max_memory_mb: 2048               # 2GB RAM per container
+  max_cpu_cores: 2.0                # 2 CPU cores per container
+  max_concurrent_sessions: 1        # Only one unattended session at a time
+
+# =============================================================================
+# Signing (Optional)
+# =============================================================================
+
+require_signed_plans: false
+trusted_signers: []
+
+# =============================================================================
+# Audit and Logging
+# =============================================================================
+
+audit:
+  log_all_commands: true
+  log_file_access: true
+  log_network_attempts: true
+  retention_days: 90

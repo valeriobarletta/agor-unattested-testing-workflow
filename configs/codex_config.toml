@@ -1,0 +1,107 @@
+# Codex CLI Configuration for Agor Unattended Testing Workflow
+# Place at ~/.codex/config.toml
+#
+# Uses Ollama as the local model provider with dual-model setup:
+#   - devstral:24b (primary) for complex implementation
+#   - deepseek-coder-v2-lite:16b (fast) for quick fixes
+#
+# Docs: https://github.com/openai/codex/blob/main/codex-cli/docs/
+
+# =============================================================================
+# Default Settings
+# =============================================================================
+
+# Default model for interactive use
+model = "devstral:24b"
+model_provider = "ollama"
+
+# Approval policy: never = auto-approve (for unattended mode)
+approval_policy = "on-request"
+
+# Sandbox: workspace-write allows file edits within project
+sandbox_mode = "workspace-write"
+
+# Network: disabled by default for security
+network_access = false
+
+# =============================================================================
+# Ollama Provider Configuration
+# =============================================================================
+
+[model_providers.ollama]
+name = "Ollama Local"
+# Ollama exposes OpenAI-compatible API at /v1
+base_url = "http://localhost:11434/v1"
+# Ollama typically doesn't require authentication
+# Set a dummy key if Codex CLI requires one
+env_key = "OLLAMA_API_KEY"
+# Use responses API (falls back to chat completions automatically)
+wire_api = "responses"
+
+# =============================================================================
+# Execution Profiles
+# =============================================================================
+
+# Unattended profile: auto-approve, Devstral for complex work
+[profiles.unattended]
+model = "devstral:24b"
+model_provider = "ollama"
+approval_policy = "never"           # Auto-approve for unattended
+sandbox_mode = "workspace-write"    # Allow file edits
+network_access = false              # No network
+
+# Fast profile: auto-approve, Lite model for quick fixes
+[profiles.fast]
+model = "deepseek-coder-v2-lite:16b"
+model_provider = "ollama"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+network_access = false
+
+# Safe profile: human approval, read-only
+[profiles.safe]
+model = "devstral:24b"
+model_provider = "ollama"
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+network_access = false
+
+# =============================================================================
+# Security Hardening
+# =============================================================================
+
+# NEVER trust project-local config for these keys
+# (Codex CLI automatically ignores sensitive keys in .codex/config.toml)
+[security]
+# Require explicit approval for these tools even in "never" mode
+restricted_tools = ["shell", "file_write", "file_delete"]
+
+# Environment isolation
+shell_environment_policy = "minimal"  # minimal | inherit
+
+# Network proxy (if network_access = true)
+# network_proxy = "http://proxy.company:8080"
+
+# =============================================================================
+# UI Preferences
+# =============================================================================
+
+[ui]
+file_opener = "vscode"
+editor = "vim"  # vim mode for keyboard-driven interface
+
+# =============================================================================
+# How to Use Profiles
+# =============================================================================
+# 
+# Interactive development:
+#   codex --profile safe
+#
+# Unattended execution (Agor workflow):
+#   codex --profile unattended --approval never
+#
+# Quick fix mode:
+#   codex --profile fast
+#
+# Explicit model override:
+#   codex --model deepseek-coder-v2-lite:16b --profile fast

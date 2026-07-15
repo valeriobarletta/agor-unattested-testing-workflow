@@ -1,0 +1,84 @@
+# Docker Compose for Agor Unattended Testing Workflow
+# 
+# NOTE: Ollama runs on the HOST (not in Docker) for direct Apple Silicon/Metal access.
+# This compose file only manages the executor and supporting services.
+# 
+# Usage:
+#   docker compose -f configs/docker-compose.yml up -d executor
+
+version: "3.8"
+
+services:
+  # Executor service — isolated container for Codex CLI
+  # This service is typically launched dynamically per-session by container-launcher.sh
+  # Included here for reference and manual testing only.
+  executor:
+    build:
+      context: ..
+      dockerfile: configs/Dockerfile.executor
+    image: agor-executor:latest
+    container_name: agor-executor-template
+    
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+    
+    # Security: No privilege escalation
+    security_opt:
+      - no-new-privileges:true
+    
+    # Security: Read-only root filesystem
+    read_only: true
+    
+    # Security: Private namespaces
+    pid: private
+    ipc: private
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    
+    # Network: Isolated (no external access)
+    networks:
+      - agor-isolated
+    
+    # Environment
+    environment:
+      - GIT_CONFIG_NOSYSTEM=1
+      - GIT_CONFIG_GLOBAL=/dev/null
+      - HOME=/tmp
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    
+    # Volumes: Only worktree is mounted at runtime
+    # (container-launcher.sh handles this dynamically)
+    volumes:
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 200M
+          mode: 1777
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "codex", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    
+    # Do not auto-start — launched per-session
+    profiles: ["template"]
+
+networks:
+  agor-isolated:
+    name: agor-isolated
+    driver: bridge
+    internal: true  # No external routing
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+          gateway: 172.25.0.1
+
+# No volumes needed — all state is ephemeral
