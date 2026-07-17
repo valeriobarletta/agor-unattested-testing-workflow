@@ -170,41 +170,47 @@ class SessionManager:
         if not self.storage_path.exists():
             return sessions
 
-        with open(self.storage_path, "r") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+        lock_file = self.storage_path.with_suffix(".lock")
+        with open(lock_file, "w") as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_SH)
             try:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        sessions.append(Session.from_dict(data))
-                    except (json.JSONDecodeError, ValueError) as e:
-                        logger.warning("Skipping malformed session record: %s", e)
+                with open(self.storage_path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            sessions.append(Session.from_dict(data))
+                        except (json.JSONDecodeError, ValueError) as e:
+                            logger.warning("Skipping malformed session record: %s", e)
             finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
         return sessions
 
     def _write_all_sessions(self, sessions: List[Session]) -> None:
         """Write all sessions to storage with file locking."""
-        with open(self.storage_path, "w") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        lock_file = self.storage_path.with_suffix(".lock")
+        with open(lock_file, "w") as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
             try:
-                for session in sessions:
-                    f.write(json.dumps(session.to_dict()) + "\n")
+                with open(self.storage_path, "w") as f:
+                    for session in sessions:
+                        f.write(json.dumps(session.to_dict()) + "\n")
             finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
     def _append_session(self, session: Session) -> None:
         """Append a single session record."""
-        with open(self.storage_path, "a") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        lock_file = self.storage_path.with_suffix(".lock")
+        with open(lock_file, "w") as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
             try:
-                f.write(json.dumps(session.to_dict()) + "\n")
+                with open(self.storage_path, "a") as f:
+                    f.write(json.dumps(session.to_dict()) + "\n")
             finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
     # ------------------------------------------------------------------
     # CRUD operations
