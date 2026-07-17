@@ -87,8 +87,9 @@ validate_worktree() {
         "Worktree outside authorized root: $canonical (must be under $AUTHORIZED_ROOT)"
 
     # Must be a Git worktree
-    [[ ! -d "$canonical/.git" && ! -f "$canonical/.git" ]] && warn \
-        "Path may not be a Git worktree: $canonical"
+    if [[ ! -d "$canonical/.git" && ! -f "$canonical/.git" ]]; then
+        error "Path is not a Git worktree: $canonical (no .git found)"
+    fi
 
     echo "$canonical"
 }
@@ -111,7 +112,9 @@ prepare_secrets() {
 
     mkdir -p "$secret_dir"
     mount -t tmpfs -o size=1m,mode=700 tmpfs "$secret_dir" 2>/dev/null || {
-        warn "Cannot mount tmpfs for secrets — falling back to regular directory"
+        error "Cannot mount tmpfs for secrets — need root privileges. Secrets will NOT be stored on disk."
+        rm -rf "$secret_dir"
+        exit 1
     }
 
     # If a secrets file is provided, copy it into tmpfs
@@ -162,7 +165,7 @@ main() {
         umount "$secret_dir" 2>/dev/null || true
         rm -rf "$secret_dir"
         log "Cleanup complete (exit code: $exit_code)"
-        return $exit_code
+        exit $exit_code
     }
     trap cleanup EXIT
 
@@ -242,7 +245,7 @@ main() {
     fi
 
     # Log the command
-    log "docker run ${docker_args[*]} $IMAGE_NAME <command>"
+    log "Launching container: $container_name (image: $IMAGE_NAME, worktree: $worktree_path)"
 
     # Execute with timeout
     local exit_code=0
