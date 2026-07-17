@@ -16,6 +16,12 @@
 
 set -euo pipefail
 
+# Bash version check
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    echo "ERROR: Bash 4+ required (found ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]})" >&2
+    exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -67,6 +73,11 @@ DISCOVERY="$(cd "$(dirname "$0")" && pwd)/test-discovery.sh"
 log "Running test discovery..."
 TEST_CONFIG="$($DISCOVERY "$WORKTREE" 2>/dev/null || echo '{}')"
 
+# Validate discovery output is valid JSON
+if ! echo "$TEST_CONFIG" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
+    error "Test discovery produced invalid JSON"
+fi
+
 # ---------------------------------------------------------------------------
 # Result tracking
 # ---------------------------------------------------------------------------
@@ -113,7 +124,8 @@ except:
         log "  $ $cmd"
 
         local cmd_exit=0
-        (cd "$WORKTREE" && eval "$cmd" >> "$layer_stdout" 2>> "$layer_stderr") || cmd_exit=$?
+        read -ra cmdarray <<< "$cmd"
+        (cd "$WORKTREE" && "${cmdarray[@]}" >> "$layer_stdout" 2>> "$layer_stderr") || cmd_exit=$?
 
         if [[ $cmd_exit -ne 0 ]]; then
             layer_exit=$cmd_exit
@@ -242,40 +254,49 @@ collect_git_diff() {
 generate_summary() {
     local summary_file="$ARTIFACTS_DIR/test-report.json"
 
-    python3 -c "
+    # Export data via environment variables (avoids shell injection into Python)
+    export _AGOR_WORKTREE="$WORKTREE"
+    export _AGOR_ARTIFACTS="$ARTIFACTS_DIR"
+    export _AGOR_STATUS="$OVERALL_STATUS"
+    export _AGOR_TS
+    _AGOR_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    python3 -c '
 import json, os
 
 result = {
-    'timestamp': '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
-    'worktree': '$WORKTREE',
-    'overall_status': '$OVERALL_STATUS',
-    'layers': {}
+    "timestamp": os.environ.get("_AGOR_TS", ""),
+    "worktree": os.environ.get("_AGOR_WORKTREE", ""),
+    "overall_status": os.environ.get("_AGOR_STATUS", "unknown"),
+    "layers": {}
 }
 
-layers = ['static_validation', 'unit_tests', 'integration_tests', 'e2e_tests']
+artifacts_dir = os.environ.get("_AGOR_ARTIFACTS", "")
+layers = ["static_validation", "unit_tests", "integration_tests", "e2e_tests"]
 for layer in layers:
-    layer_dir = os.path.join('$ARTIFACTS_DIR', layer)
-    if os.path.exists(os.path.join(layer_dir, 'results.json')):
-        with open(os.path.join(layer_dir, 'results.json')) as f:
-            result['layers'][layer] = json.load(f)
+    layer_dir = os.path.join(artifacts_dir, layer)
+    results_path = os.path.join(layer_dir, "results.json")
+    if os.path.exists(results_path):
+        with open(results_path) as f:
+            result["layers"][layer] = json.load(f)
     else:
-        status = '${RESULTS['$layer']:-not_run}'
-        result['layers'][layer] = {'status': status}
+        result["layers"][layer] = {"status": "not_run"}
 
 # Add coverage info
 coverage_files = []
-for root, dirs, files in os.walk('$ARTIFACTS_DIR'):
+for root, dirs, files in os.walk(artifacts_dir):
     for f in files:
-        if 'coverage' in f.lower():
-            coverage_files.append(os.path.relpath(os.path.join(root, f), '$ARTIFACTS_DIR'))
-result['coverage_files'] = coverage_files
+        if "coverage" in f.lower():
+            coverage_files.append(os.path.relpath(os.path.join(root, f), artifacts_dir))
+result["coverage_files"] = coverage_files
 
-with open('$summary_file', 'w') as f:
+summary_file = os.path.join(artifacts_dir, "test-report.json")
+with open(summary_file, "w") as f:
     json.dump(result, f, indent=2)
 
-print(f'Summary written to: $summary_file')
-print(f'Overall: {result[\"overall_status\"]}')
-"
+print(f"Summary written to: {summary_file}")
+print(f"Overall: {result[\"overall_status\"]}")
+'
 }
 
 # ---------------------------------------------------------------------------
