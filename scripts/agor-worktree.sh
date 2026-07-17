@@ -126,7 +126,7 @@ cmd_create() {
 
     # Generate worktree path and branch name
     local safe_ticket
-    safe_ticket="$(echo "$ticket_id" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
+    safe_ticket="$(printf '%s' "$ticket_id" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
     local worktree_path="$AUTHORIZED_ROOT/${BRANCH_PREFIX}-${safe_ticket}"
     local branch_name="${BRANCH_PREFIX}/${safe_ticket}"
 
@@ -173,7 +173,10 @@ cmd_cleanup() {
 
     # Remove worktree
     git -C "$canonical" worktree remove --force "$canonical" 2>/dev/null || {
-        # If git worktree remove fails, force remove
+        # If git worktree remove fails, force remove (with safety guard)
+        local basename_canonical
+        basename_canonical="$(basename "$canonical")"
+        [[ "$basename_canonical" != agor-* ]] && error "Refusing to remove non-agor directory: $canonical"
         rm -rf "$canonical"
     }
 

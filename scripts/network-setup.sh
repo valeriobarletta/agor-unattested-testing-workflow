@@ -144,8 +144,9 @@ cmd_lockdown() {
     iptables -X "$IPTABLES_CHAIN" 2>/dev/null || true
     iptables -N "$IPTABLES_CHAIN" 2>/dev/null || true
 
-    # Link chain to FORWARD for this bridge
-    iptables -A FORWARD -o "$bridge_iface" -j "$IPTABLES_CHAIN"
+    # Link chain to FORWARD for this bridge (check for duplicates first)
+    iptables -C FORWARD -o "$bridge_iface" -j "$IPTABLES_CHAIN" 2>/dev/null || \
+        iptables -A FORWARD -o "$bridge_iface" -j "$IPTABLES_CHAIN"
 
     # Allow established/related connections (return traffic)
     iptables -A "$IPTABLES_CHAIN" -m state --state ESTABLISHED,RELATED -j ACCEPT

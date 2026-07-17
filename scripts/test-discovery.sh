@@ -85,17 +85,18 @@ detect_node() {
 
     # Read scripts from package.json using Python for reliable JSON parsing
     local scripts
-    scripts="$(python3 -c "
-import json, sys
+    scripts="$(_PKG_PATH="$pkg" python3 -c '
+import json, sys, os
+pkg_path = os.environ["_PKG_PATH"]
 try:
-    with open('$pkg') as f:
+    with open(pkg_path) as f:
         data = json.load(f)
-    scripts = data.get('scripts', {})
+    scripts = data.get("scripts", {})
     for name, cmd in scripts.items():
-        print(f'{name}:{cmd}')
+        print(f"{name}:{cmd}")
 except Exception as e:
     sys.exit(0)
-")"
+')"
 
     # Static validation
     while IFS= read -r line; do
@@ -148,42 +149,58 @@ except Exception as e:
 
     # Detect frameworks in devDependencies for metadata
     local has_jest="false" has_vitest="false" has_playwright="false"
-    python3 -c "
-import json
+    _PKG_PATH="$pkg" python3 -c '
+import json, os
+pkg_path = os.environ["_PKG_PATH"]
 try:
-    with open('$pkg') as f:
+    with open(pkg_path) as f:
         data = json.load(f)
-    deps = {**data.get('dependencies', {}), **data.get('devDependencies', {})}
-    print('jest' in deps)
-    print('vitest' in deps)
-    print('@playwright/test' in deps)
+    deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+    print("jest" in deps)
+    print("vitest" in deps)
+    print("@playwright/test" in deps)
 except:
-    print('false'); print('false'); print('false')
-" | {
+    print("false"); print("false"); print("false")
+' | {
         read -r has_jest
         read -r has_vitest
         read -r has_playwright
     }
 
-    # Output JSON
-    python3 -c "
-import json
+    # Output JSON via environment variables (avoid shell injection)
+    {
+        export _AGOR_HAS_JEST="$has_jest"
+        export _AGOR_HAS_VITEST="$has_vitest"
+        export _AGOR_HAS_PLAYWRIGHT="$has_playwright"
+        export _AGOR_STATIC_CMDS _AGOR_UNIT_CMDS _AGOR_INTEGRATION_CMDS _AGOR_E2E_CMDS _AGOR_BUILD_CMDS
+        _AGOR_STATIC_CMDS="${static[*]}"
+        _AGOR_UNIT_CMDS="${unit[*]}"
+        _AGOR_INTEGRATION_CMDS="${integration[*]}"
+        _AGOR_E2E_CMDS="${e2e[*]}"
+        _AGOR_BUILD_CMDS="${build_cmd[*]}"
+        python3 -c '
+import json, os
+
+def cmds_to_list(cmds_str):
+    return cmds_str.split() if cmds_str else []
+
 result = {
-    'project_type': 'node',
-    'static_validation': ${static:+'[]'},
-    'unit_tests': ${unit:+'[]'},
-    'integration_tests': ${integration:+'[]'},
-    'e2e_tests': ${e2e:+'[]'},
-    'build': ${build_cmd:+'[]'},
-    '_meta': {
-        'package_manager': 'npm',
-        'has_jest': $has_jest,
-        'has_vitest': $has_vitest,
-        'has_playwright': $has_playwright
+    "project_type": "node",
+    "static_validation": cmds_to_list(os.environ.get("_AGOR_STATIC_CMDS", "")),
+    "unit_tests": cmds_to_list(os.environ.get("_AGOR_UNIT_CMDS", "")),
+    "integration_tests": cmds_to_list(os.environ.get("_AGOR_INTEGRATION_CMDS", "")),
+    "e2e_tests": cmds_to_list(os.environ.get("_AGOR_E2E_CMDS", "")),
+    "build": cmds_to_list(os.environ.get("_AGOR_BUILD_CMDS", "")),
+    "_meta": {
+        "package_manager": "npm",
+        "has_jest": os.environ.get("_AGOR_HAS_JEST", "false") == "True",
+        "has_vitest": os.environ.get("_AGOR_HAS_VITEST", "false") == "True",
+        "has_playwright": os.environ.get("_AGOR_HAS_PLAYWRIGHT", "false") == "True"
     }
 }
 print(json.dumps(result, indent=2))
-" 2>/dev/null || echo '{
+'
+    } 2>/dev/null || echo '{
   "project_type": "node",
   "static_validation": [],
   "unit_tests": [],
@@ -212,20 +229,21 @@ detect_python() {
 
     # Check for pytest
     if [[ -f "$root/pyproject.toml" ]]; then
-        if python3 -c "
-import tomllib, sys
+        _ROOT_PATH="$root" python3 -c '
+import tomllib, sys, os
+root_path = os.environ["_ROOT_PATH"]
 try:
-    with open('$root/pyproject.toml', 'rb') as f:
+    with open(os.path.join(root_path, "pyproject.toml"), "rb") as f:
         data = tomllib.load(f)
     # Check for pytest, ruff, mypy, black in tool table
-    tools = data.get('tool', {})
-    print('pytest' in tools)
-    print('ruff' in tools)
-    print('mypy' in tools)
-    print('black' in tools)
+    tools = data.get("tool", {})
+    print("pytest" in tools)
+    print("ruff" in tools)
+    print("mypy" in tools)
+    print("black" in tools)
 except Exception:
-    print('false'); print('false'); print('false'); print('false')
-" 2>/dev/null | {
+    print("false"); print("false"); print("false"); print("false")
+' 2>/dev/null | {
             read -r has_pytest; read -r has_ruff; read -r has_mypy; read -r has_black
             [[ "$has_ruff" == "True" ]] && static+=("ruff check .")
             [[ "$has_mypy" == "True" ]] && static+=("mypy .")
@@ -240,19 +258,30 @@ except Exception:
     [[ -d "$root/tests/integration" ]] && integration+=("pytest tests/integration/")
     [[ -d "$root/tests/e2e" ]] && e2e+=("pytest tests/e2e/")
 
-    python3 -c "
-import json
+    {
+        export _AGOR_STATIC_CMDS _AGOR_UNIT_CMDS _AGOR_INTEGRATION_CMDS _AGOR_E2E_CMDS
+        _AGOR_STATIC_CMDS="${static[*]}"
+        _AGOR_UNIT_CMDS="pytest --cov=src --cov-report=xml --cov-report=term"
+        _AGOR_INTEGRATION_CMDS="${integration[*]}"
+        _AGOR_E2E_CMDS="${e2e[*]}"
+        python3 -c '
+import json, os
+
+def cmds_to_list(cmds_str):
+    return cmds_str.split() if cmds_str else []
+
 result = {
-    'project_type': 'python',
-    'static_validation': $(python3 -c "print(${static[@]+"\"${static[@]}\""})" 2>/dev/null || echo '[]'),
-    'unit_tests': ['pytest --cov=src --cov-report=xml --cov-report=term'],
-    'integration_tests': $(python3 -c "print(${integration[@]+"\"${integration[@]}\""})" 2>/dev/null || echo '[]'),
-    'e2e_tests': $(python3 -c "print(${e2e[@]+"\"${e2e[@]}\""})" 2>/dev/null || echo '[]'),
-    'build': ['python -m build'],
-    '_meta': {'package_manager': 'pip'}
+    "project_type": "python",
+    "static_validation": cmds_to_list(os.environ.get("_AGOR_STATIC_CMDS", "")),
+    "unit_tests": [os.environ.get("_AGOR_UNIT_CMDS", "pytest")],
+    "integration_tests": cmds_to_list(os.environ.get("_AGOR_INTEGRATION_CMDS", "")),
+    "e2e_tests": cmds_to_list(os.environ.get("_AGOR_E2E_CMDS", "")),
+    "build": ["python -m build"],
+    "_meta": {"package_manager": "pip"}
 }
 print(json.dumps(result, indent=2))
-" 2>/dev/null || echo '{
+'
+    } 2>/dev/null || echo '{
   "project_type": "python",
   "static_validation": ["pytest --cov=src --cov-report=xml --cov-report=term"],
   "unit_tests": [],
@@ -277,7 +306,7 @@ detect_rust() {
   "project_type": "rust",
   "static_validation": ["cargo clippy -- -D warnings", "cargo fmt -- --check"],
   "unit_tests": ["cargo test"],
-  "integration_tests": ["cargo test --test '*integration*'"],
+  "integration_tests": ["cargo test --test '\''*integration*'\''"],
   "e2e_tests": [],
   "build": ["cargo build --release"],
   "_meta": {"package_manager": "cargo"}
@@ -324,19 +353,31 @@ detect_generic() {
         esac
     done <<< "$targets"
 
-    python3 -c "
-import json
+    {
+        export _AGOR_STATIC_CMDS _AGOR_UNIT_CMDS _AGOR_INTEGRATION_CMDS _AGOR_E2E_CMDS _AGOR_BUILD_CMDS
+        _AGOR_STATIC_CMDS="${static[*]}"
+        _AGOR_UNIT_CMDS="${unit[*]}"
+        _AGOR_INTEGRATION_CMDS="${integration[*]}"
+        _AGOR_E2E_CMDS="${e2e[*]}"
+        _AGOR_BUILD_CMDS="${build_cmd[*]}"
+        python3 -c '
+import json, os
+
+def cmds_to_list(cmds_str):
+    return cmds_str.split() if cmds_str else []
+
 result = {
-    'project_type': 'generic',
-    'static_validation': ${static:+'[]'},
-    'unit_tests': ${unit:+'[]'},
-    'integration_tests': ${integration:+'[]'},
-    'e2e_tests': ${e2e:+'[]'},
-    'build': ${build_cmd:+'[]'},
-    '_meta': {'package_manager': 'make'}
+    "project_type": "generic",
+    "static_validation": cmds_to_list(os.environ.get("_AGOR_STATIC_CMDS", "")),
+    "unit_tests": cmds_to_list(os.environ.get("_AGOR_UNIT_CMDS", "")),
+    "integration_tests": cmds_to_list(os.environ.get("_AGOR_INTEGRATION_CMDS", "")),
+    "e2e_tests": cmds_to_list(os.environ.get("_AGOR_E2E_CMDS", "")),
+    "build": cmds_to_list(os.environ.get("_AGOR_BUILD_CMDS", "")),
+    "_meta": {"package_manager": "make"}
 }
 print(json.dumps(result, indent=2))
-" 2>/dev/null || echo '{
+'
+    } 2>/dev/null || echo '{
   "project_type": "generic",
   "static_validation": [],
   "unit_tests": ["make test"],

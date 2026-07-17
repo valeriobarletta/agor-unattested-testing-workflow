@@ -184,7 +184,7 @@ install_node() {
     # Use n or nvm if available, otherwise official installer
     if command -v n >/dev/null 2>&1; then
         sudo n 22
-    elif command -nvm >/dev/null 2>&1; then
+    elif command -v nvm >/dev/null 2>&1; then
         nvm install 22
         nvm use 22
     else

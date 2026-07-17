@@ -364,8 +364,7 @@ cmd_stop() {
         local pid
         pid="$(cat "$PIDFILE")"
         if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid"
-            wait "$pid" 2>/dev/null || true
+            kill -- -"$(ps -o pgid= "$pid" | tr -d ' ' 2>/dev/null || echo "$pid")" 2>/dev/null || kill "$pid"
             log "Ollama stopped (PID: $pid)"
         fi
         rm -f "$PIDFILE"
