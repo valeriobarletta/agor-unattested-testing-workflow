@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import tempfile
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -211,7 +212,13 @@ class PRGenerator:
 
         # Plan context
         lines.append("## Execution Plan")
-        lines.append(f"```json\n{json.dumps(plan, indent=2)}\n```")
+        plan_summary = {
+            "plan_id": plan.get("plan_id", ""),
+            "ticket_ref": plan.get("ticket_ref", ""),
+            "steps_count": len(plan.get("steps", [])),
+            "new_dependencies": plan.get("new_dependencies", []),
+        }
+        lines.append(f"```json\n{json.dumps(plan_summary, indent=2)}\n```")
         lines.append("")
 
         # Footer
@@ -247,34 +254,44 @@ class PRGenerator:
 
             remote_url = result.stdout.strip()
 
-            # Inject token into remote URL if using HTTPS
+            # Use GIT_ASKPASS for secure token handling (avoids token in URL)
             if remote_url.startswith("https://") and self._token:
-                remote_url = remote_url.replace(
-                    "https://", f"https://x-access-token:{self._token}@"
+                credential_script = Path(tempfile.mktemp(suffix=".sh"))
+                try:
+                    credential_script.write_text(
+                        f'#!/bin/sh\necho "x-access-token:{self._token}"\n'
+                    )
+                    credential_script.chmod(0o700)
+                    env["GIT_ASKPASS"] = str(credential_script)
+
+                    # Push branch
+                    subprocess.run(
+                        ["git", "push", "-u", "origin", branch_name],
+                        cwd=worktree_path,
+                        check=True,
+                        capture_output=True,
+                        env=env,
+                    )
+                finally:
+                    credential_script.unlink(missing_ok=True)
+            else:
+                # Push branch without token
+                subprocess.run(
+                    ["git", "push", "-u", "origin", branch_name],
+                    cwd=worktree_path,
+                    check=True,
+                    capture_output=True,
+                    env=env,
                 )
-
-            # Set remote with token
-            subprocess.run(
-                ["git", "remote", "set-url", "origin", remote_url],
-                cwd=worktree_path,
-                check=True,
-                env=env,
-            )
-
-            # Push branch
-            subprocess.run(
-                ["git", "push", "-u", "origin", branch_name],
-                cwd=worktree_path,
-                check=True,
-                capture_output=True,
-                env=env,
-            )
 
             logger.info("Branch pushed: %s", branch_name)
             return True
 
         except subprocess.CalledProcessError as e:
-            logger.error("Git push failed: %s", e.stderr.decode() if e.stderr else str(e))
+            logger.error(
+                "Git push failed: %s",
+                (e.stderr if isinstance(e.stderr, str) else e.stderr.decode()) if e.stderr else str(e),
+            )
             return False
 
     def create_pr(
@@ -297,7 +314,7 @@ class PRGenerator:
         }).encode()
 
         headers = {
-            "Authorization": f"token {self._token}",
+            "Authorization": f"Bearer {self._token}",
             "Accept": "application/vnd.github.v3+json",
             "Content-Type": "application/json",
         }
