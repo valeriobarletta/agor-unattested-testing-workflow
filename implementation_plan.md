@@ -543,7 +543,7 @@ for s in active:
 "
 
 # 4. Run security checklist
-bash runbook.md | grep -A 50 "Security Checklist"
+grep -A 50 "Security Checklist" runbook.md
 ```
 
 **Phase 4 Exit Criteria:**
