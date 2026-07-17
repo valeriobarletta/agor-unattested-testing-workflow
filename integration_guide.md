@@ -579,9 +579,10 @@ ollama pull devstral:24b
 ollama pull deepseek-coder-v2-lite:16b
 
 # 4. Update Codex CLI config
-sed -i 's/ds4/ollama/g' ~/.codex/config.toml
-sed -i 's/localhost:8080/localhost:11434/g' ~/.codex/config.toml
-sed -i 's/deepseek-v4-flash/devstral:24b/g' ~/.codex/config.toml
+sed -i.bak 's/ds4/ollama/g' ~/.codex/config.toml
+sed -i.bak 's/localhost:8080/localhost:11434/g' ~/.codex/config.toml
+sed -i.bak 's/deepseek-v4-flash/devstral:24b/g' ~/.codex/config.toml
+# Note: On Linux, you can use sed -i without extension. On macOS, sed -i '' is required.
 
 # 5. Verify
 curl http://localhost:11434/v1/models
