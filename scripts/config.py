@@ -233,17 +233,17 @@ def load_config(path: str) -> OrchestratorConfig:
     try:
         import yaml
         with open(config_path) as f:
-            data = yaml.safe_load(f)
-
-        if not data:
-            return OrchestratorConfig.default()
-
+            data = yaml.safe_load(f) or {}
         return OrchestratorConfig.from_dict(data)
-
     except ImportError:
         logger.error("PyYAML not installed — cannot load config from YAML")
         return OrchestratorConfig.default()
-
+    except FileNotFoundError:
+        logger.warning("Config file not found: %s — using defaults", path)
+        return OrchestratorConfig.default()
+    except yaml.YAMLError as e:
+        logger.error("Invalid YAML in config file %s: %s — using defaults", path, e)
+        return OrchestratorConfig.default()
     except Exception as e:
-        logger.error("Failed to load config: %s — using defaults", e)
+        logger.error("Unexpected error loading config %s: %s — using defaults", path, e)
         return OrchestratorConfig.default()
