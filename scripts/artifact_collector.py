@@ -141,7 +141,7 @@ class ArtifactCollector:
             return "jest"
         if "Vitest" in output or "vitest" in output.lower():
             return "vitest"
-        if "pytest" in output.lower() or "=== " in output and "passed" in output:
+        if "pytest" in output.lower() or ("=== " in output and "passed" in output):
             return "pytest"
         if "Playwright" in output or "pw:api" in output:
             return "playwright"
