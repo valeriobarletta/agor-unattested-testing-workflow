@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -193,7 +194,7 @@ class PolicyEngine:
     EXFIL_PATTERNS = [
         re.compile(r'\bcurl\s+.*https?://'),
         re.compile(r'\bwget\s+.*https?://'),
-        re.compile(r'\bfetch\s*\(\s*["\']https?://'),
+        re.compile(r'\bfetch\*\(\s*["\']https?://'),
         re.compile(r'\bhttps?://\S+\.(png|jpg|gif|svg)\b'),  # Markdown image exfiltration
         re.compile(r'\bdns\s*exfil', re.IGNORECASE),
     ]
@@ -300,8 +301,6 @@ class PolicyEngine:
     def _validate_paths(self, plan: Dict[str, Any]) -> List[PolicyViolation]:
         """Validate all file paths are within allowed directories."""
         violations: List[PolicyViolation] = []
-        allowed = [Path(p).resolve() for p in self.policy.allowed_paths]
-        forbidden = [Path(p).resolve() for p in self.policy.forbidden_paths]
 
         for step in plan.get("steps", []):
             target = step.get("target", "")
@@ -309,7 +308,7 @@ class PolicyEngine:
                 continue
 
             try:
-                canonical = Path(target).resolve()
+                canonical_str = os.path.realpath(str(target))
             except (OSError, ValueError) as e:
                 violations.append(PolicyViolation(
                     rule="path_validation",
@@ -319,16 +318,30 @@ class PolicyEngine:
                 continue
 
             # Check forbidden paths
-            for fp in forbidden:
-                if str(canonical).startswith(str(fp)) or fp.name in str(canonical):
-                    violations.append(PolicyViolation(
-                        rule="forbidden_path",
-                        message=f"Step targets forbidden path: {target}",
-                        severity=RiskLevel.CRITICAL,
-                    ))
+            for fp in self.policy.forbidden_paths:
+                fp_path = Path(fp)
+                try:
+                    if Path(canonical_str).is_relative_to(fp_path):
+                        violations.append(PolicyViolation(
+                            rule="forbidden_path",
+                            message=f"Step targets forbidden path: {target}",
+                            severity=RiskLevel.CRITICAL,
+                        ))
+                except (ValueError, OSError):
+                    pass
 
             # Check allowed paths
-            in_allowed = any(str(canonical).startswith(str(a)) for a in allowed)
+            in_allowed = False
+            for allowed in self.policy.allowed_paths:
+                allowed_str = os.path.realpath(allowed)
+                try:
+                    os.path.commonpath([canonical_str, allowed_str])
+                    if canonical_str == allowed_str or canonical_str.startswith(allowed_str + os.sep):
+                        in_allowed = True
+                        break
+                except ValueError:
+                    continue
+
             if not in_allowed and self.policy.allowed_paths:
                 violations.append(PolicyViolation(
                     rule="path_not_allowed",
